@@ -23,7 +23,7 @@ int sample_urandom(BYTE sampled_bits[], int sample_len);
 
 std::vector<BYTE> pad_cbc(std::vector<BYTE> data);
 
-std::vector<BYTE> unpad_cbc(const BYTE* padded_data, int len);
+std::vector<BYTE> unpad_cbc(std::vector<BYTE> padded_data);
 
 void sample_random(char * buf, int sample_bytes);
 

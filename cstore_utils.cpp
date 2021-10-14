@@ -83,7 +83,7 @@ int encrypt_cbc(std::vector<BYTE> plaintext, const BYTE * IV, BYTE ciphertext[],
     BYTE plaintext_block[AES_BLOCK_SIZE], xor_block[AES_BLOCK_SIZE], encrypted_block[AES_BLOCK_SIZE], iv_buf[AES_BLOCK_SIZE];
     
     // Check if padding worked
-    // Padded in main()
+        // Padded in main()
 
     // Main Loop
     // Transfer over IV to buffer
@@ -93,22 +93,15 @@ int encrypt_cbc(std::vector<BYTE> plaintext, const BYTE * IV, BYTE ciphertext[],
         std::memcpy(plaintext_block, &plaintext[i], 16);
 
         if(i == 0)
-        {
             for(int j = 0; j < 16; j++)
-                xor_block[j] = iv_buf[i-16] ^ plaintext_block[j];
-        }
+                xor_block[j] = iv_buf[j] ^ plaintext_block[j];
         else
-        {
             for(int j = 0; j < 16; j++)
                 xor_block[j] = ciphertext[i-16+j] ^ plaintext_block[j];
-        }
+
         aes_encrypt(xor_block, encrypted_block, key_schedule, 256);
         std::memcpy(&ciphertext[i], encrypted_block, 16);
     }
-
-    // Append the IV to the beginning of final ciphertext
-    
-    // Start at 1 because IV is first block
 
     // Check if the length is as expected, if bad return 1 (error)
     
@@ -121,18 +114,31 @@ int decrypt_cbc(const BYTE* ciphertext, std::vector<BYTE> &decrypted_plaintext, 
     WORD key_schedule[60];
     aes_key_setup(key, key_schedule, 256); // 256 is digest of SHA-256 (our key)
 
+    // Encryption starts here:, AES_BLOCKSIZE is from aes.h
+    BYTE xor_block[AES_BLOCK_SIZE], decrypted_block[AES_BLOCK_SIZE], iv_buf[AES_BLOCK_SIZE];
+    
     // Extract IV from ciphertext
-    BYTE iv_buf[AES_BLOCK_SIZE];
+    for(int i = 0; i < 16; i++)
+        iv_buf[i] = ciphertext[i];
 
     // Decrypt the ciphertext, Ciphertext size minus an IV
 
-
     // MAIN LOOP
         // XOR decrypted block and IV
-
+    for(int i = 16; i <= input_len; i += 16)
+    {
+        aes_decrypt(&ciphertext[i], decrypted_block, key_schedule, 256);
+        if(i == 16)
+            for(int j = 0; j < 16; j++)
+                decrypted_plaintext.push_back(iv_buf[j] ^ decrypted_block[j]);
+        else
+            for(int j = 0; j < 16; j++)
+                decrypted_plaintext.push_back(ciphertext[i-16+j] ^ decrypted_block[j]);
+    }
 
     // Remove padding from the plaintext
- 
+    decrypted_plaintext = unpad_cbc(decrypted_plaintext);
+
     // Write unpadded plaintext
 
     return 0;
@@ -187,9 +193,13 @@ std::vector<BYTE> pad_cbc(std::vector<BYTE> data)
 }
 
 // Remove the padding from the data after it is decrypted.
-std::vector<BYTE> unpad_cbc(const BYTE* padded_data, int len)
+std::vector<BYTE> unpad_cbc(std::vector<BYTE> padded_data)
 {
-
+    int last_element = padded_data.back();
+    if(last_element > 0 && last_element < 16)
+        for(int i = 0; i <  last_element; i++)
+            padded_data.pop_back();
+    return padded_data;
 }
 
 void hash_sha256(const BYTE * input, BYTE * output, int in_len)

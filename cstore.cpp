@@ -20,7 +20,7 @@ int IV_SIZE = 16;
 extern int DIGITS;
 int DIGITS = 7;
 extern int META_DATA_LEN;
-int META_DETA_LEN = 43;
+int META_DATA_LEN = 43;
 
 int main(int argc, char *argv[])
 {
@@ -87,14 +87,9 @@ int main(int argc, char *argv[])
                 if(plaintext.empty())
                     die("ERROR: Empty file provided");
 
-                int index = 0;
-
                 // Generate IV
-                // unsigned char iv[16] = {};
-                // sample_urandom(iv, 16);
-                unsigned char iv[16] = {
-                    0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f
-                };
+                unsigned char iv[16] = {};
+                sample_urandom(iv, 16);
 
                 // Pad plaintext and encrypt it
                 plaintext = pad_cbc(plaintext);
@@ -102,16 +97,19 @@ int main(int argc, char *argv[])
                 unsigned char ciphertext[data_size];
                 std::memset(ciphertext, 0, data_size);
                 encrypt_cbc(plaintext, iv, ciphertext, key, 32, data_size);
+                
+                print_hex(key, sizeof key);
+                print_hex(iv, 16);
+                print_hex(ciphertext, sizeof ciphertext);
 
                 // Hold all file data
                 unsigned char metadata[20 + DIGITS + IV_SIZE + sizeof ciphertext];
                 std::memset(metadata, 0, sizeof(metadata));
 
+                int index = 0;
                 // Add file name to output (allocate 20 bytes for filename)
                 for(int i = 0; i < filename.length(); i++, index++)
-                {
                     metadata[index] = filename.at(i);
-                }
                 index += 20 - filename.length();
 
                 // Add length of ciphertext to output
@@ -131,10 +129,7 @@ int main(int argc, char *argv[])
                 
                 // Add ciphertext to output
                 for(int i = 0; i < sizeof ciphertext; i++)
-                {
                     metadata[index++] = ciphertext[i];
-                }
-
                 int metadata_size = sizeof metadata;
 
                 // Increase size of total archive and assign file metadata to archive 
@@ -148,9 +143,7 @@ int main(int argc, char *argv[])
             // Get the HMAC
 			unsigned char padded_key[64] = {};
 			for(int i = 0; i < 32; i++)
-			{
 				padded_key[i] = key[i];
-			}
 
             // Archive data in array format
             unsigned char arr_archive[archive_size];
@@ -172,9 +165,11 @@ int main(int argc, char *argv[])
 
 		if (function == "extract")
 		{
-            std::string archive = argv[arg_index];
-			std::vector<BYTE> enc_vec = read_file(archive);
+			std::vector<BYTE> enc_vec = read_file(archive_name);
+            if(enc_vec.empty())
+                die("ERROR: Archive empty or does not exist");
 
+            // Get the HMAC of the file
             unsigned char file_hmac[32] = {};
             unsigned char contents[enc_vec.size() - 32];
             for(int i = 0; i < enc_vec.size(); i++)
@@ -189,6 +184,44 @@ int main(int argc, char *argv[])
             if(std::memcmp(file_hmac, hmac_key, 32))
                 die("ERROR: HMAC integrity failure. Password is incorrect or file has been tampered with.");
 
+            // Loop through the archive, find the files to extract, decrypt them, and create them
+            for(int i = 32; i < enc_vec.size();)
+            {
+                // Get the file name (first section of file metadata)
+                std::string file_name;
+                for(int j = 0; j < 20; j++)
+                    if(enc_vec.at(i+j) != 0x00)
+                        file_name.push_back(enc_vec.at(i+j));
+                
+                // Check whether the file needs to be deleted or not
+                bool should_retrieve = false;
+                for(int j = 0, tmp_arg_index = arg_index; j < argc - tmp_arg_index + 1; j++, tmp_arg_index++)
+                    if(file_name == argv[tmp_arg_index])
+                        should_retrieve = true;
+                
+                // Get the length of the file contents
+                std::string file_len_string;
+                for(int j = 20; j < 27; j++)
+                    if(enc_vec.at(i+j) != 0x00)
+                        file_len_string.push_back(enc_vec.at(i+j));
+                int file_len = std::stoi(file_len_string);
+
+                // Delete the file or continue on to the next block
+                if(should_retrieve)
+                {
+                    // Get the encrypyed contents, and assign them to an array
+                    unsigned char ciphertext[file_len];
+                    std::vector<BYTE> vec_cipher = {enc_vec.begin() + i + META_DATA_LEN - IV_SIZE, enc_vec.begin() + i + META_DATA_LEN + file_len};
+                    for(int j = 0; j < vec_cipher.size(); j++)
+                        ciphertext[j] = vec_cipher.at(j);
+
+                    std::vector<BYTE> plaintext;
+                    decrypt_cbc(ciphertext, plaintext, key, 32, sizeof ciphertext);
+                    print_hex(plaintext);
+                }
+                i += META_DATA_LEN + file_len;   
+            }
+
 			return cstore_extract();
 		}
 
@@ -199,6 +232,7 @@ int main(int argc, char *argv[])
             if(vec_archive.empty())
                 die("ERROR: Empty archive provided");
 
+            // Get the HMAC of the file
             unsigned char file_hmac[32] = {};
             unsigned char contents[vec_archive.size() - 32];
             for(int i = 0; i < vec_archive.size(); i++)
@@ -215,7 +249,6 @@ int main(int argc, char *argv[])
             
             // Loop through all the data and delete the requested files
             std::vector<BYTE> new_file;
-            int file_name_block = 20;
             for(int i = 32; i < vec_archive.size();)
             {
                 // Get the file name (first section of file metadata)
@@ -239,9 +272,9 @@ int main(int argc, char *argv[])
 
                 // Delete the file or continue on to the next block
                 if(delete_file)
-                    vec_archive.erase(vec_archive.begin() + i, vec_archive.begin() + i + META_DETA_LEN + file_len);
+                    vec_archive.erase(vec_archive.begin() + i, vec_archive.begin() + i + META_DATA_LEN + file_len);
                 else
-                    i += META_DETA_LEN + file_len;   
+                    i += META_DATA_LEN + file_len;   
             }
 
             // Get the vector archive as a byte array
