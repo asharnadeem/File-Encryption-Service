@@ -19,6 +19,8 @@ extern int IV_SIZE;
 int IV_SIZE = 16;
 extern int DIGITS;
 int DIGITS = 7;
+extern int META_DATA_LEN;
+int META_DETA_LEN = 43;
 
 int main(int argc, char *argv[])
 {
@@ -41,31 +43,35 @@ int main(int argc, char *argv[])
 	}
 	else if (function == "add" || function == "extract" || function == "delete")
 	{
+        // Get the password from the args or ask for user to enter it
+        bool pass_provided = strcmp(argv[2], "-p") ? false : true;
+        std::string pt_pass;
+        int arg_index;
+        if (pass_provided)
+        {
+            pt_pass = argv[3];
+            arg_index = 4;
+        }
+        else
+        {
+            pt_pass = getpass("Please enter the password for your file: ");
+            arg_index = 2;
+        }
+
+        // Name of the archive
+        std::string archive_name = argv[arg_index++];
+
+        // Generate the key from the password
+        unsigned char key[32] = {};
+        iterate_sha256(pt_pass, key, SHA256_ITERS);
+
+        // Pad our key to 64 bits
+        unsigned char padded_key[64] = {};
+        for(int i = 0; i < 32; i++)
+            padded_key[i] = key[i];
+
 		if (function == "add")
 		{
-			bool pass_provided = strcmp(argv[2], "-p") ? false : true;
-			std::string pt_pass;
-			int arg_index;
-			if (pass_provided)
-			{
-				pt_pass = argv[3];
-				arg_index = 4;
-			}
-			else
-			{
-				pt_pass = getpass("Please enter the password for your file: ");
-				arg_index = 2;
-			}
-
-			// Create archive
-			std::string archive_name = argv[arg_index];
-			std::ofstream archive(archive_name);
-			arg_index++;
-
-            // Generate the key from the password
-			unsigned char key[32] = {};
-			iterate_sha256(pt_pass, key, SHA256_ITERS);
-
             // Holds the entire data of the archive, with size set to 32 for future HMAC
             std::vector<BYTE> vec_archive;
             int archive_size = 32;
@@ -146,14 +152,18 @@ int main(int argc, char *argv[])
 				padded_key[i] = key[i];
 			}
 
+            // Archive data in array format
             unsigned char arr_archive[archive_size];
             for(int i = 0; i < archive_size; i++)
                 arr_archive[i] = vec_archive.at(i);
 
+            // Generate the HMAC for the entire file contents
 			unsigned char hmac_key[32] = {};
 			hmac(&arr_archive[32], padded_key, hmac_key, archive_size - KEY_SIZE, KEY_SIZE);
             std::memcpy(arr_archive, hmac_key, 32);
 
+			// Create the archive and write the encrypted data to it
+			std::ofstream archive(archive_name);
             archive.write((char *)arr_archive,sizeof(arr_archive));
             archive.close();
 
@@ -162,46 +172,20 @@ int main(int argc, char *argv[])
 
 		if (function == "extract")
 		{
-            bool pass_provided = strcmp(argv[2], "-p") ? false : true;
-			std::string pt_pass;
-			int arg_index;
-			if (pass_provided)
-			{
-				pt_pass = argv[3];
-				arg_index = 4;
-			}
-			else
-			{
-				pt_pass = getpass("Please enter the password for your file: ");
-				arg_index = 2;
-			}
-
             std::string archive = argv[arg_index];
 			std::vector<BYTE> enc_vec = read_file(archive);
-
-            // Get the password
-            unsigned char key[32] = {};
-			iterate_sha256(pt_pass, key, 10000);
 
             unsigned char file_hmac[32] = {};
             unsigned char contents[enc_vec.size() - 32];
             for(int i = 0; i < enc_vec.size(); i++)
-            {
                 if(i < 32)
                     file_hmac[i] = enc_vec.at(i);
                 else
                    contents[i-32] = enc_vec.at(i);
-            }
 
             // Compare the HMAC's
-			unsigned char padded_key[64] = {};
-			for(int i = 0; i < 32; i++)
-			{
-				padded_key[i] = key[i];
-			}
 			unsigned char hmac_key[32] = {};
 			hmac(contents, padded_key, hmac_key, sizeof contents, 32);
-
             if(std::memcmp(file_hmac, hmac_key, 32))
                 die("ERROR: HMAC integrity failure. Password is incorrect or file has been tampered with.");
 
@@ -210,6 +194,72 @@ int main(int argc, char *argv[])
 
 		if (function == "delete")
 		{
+            // Open the archive
+            std::vector<BYTE> vec_archive = read_file(archive_name);
+            if(vec_archive.empty())
+                die("ERROR: Empty archive provided");
+
+            unsigned char file_hmac[32] = {};
+            unsigned char contents[vec_archive.size() - 32];
+            for(int i = 0; i < vec_archive.size(); i++)
+                if(i < 32)
+                    file_hmac[i] = vec_archive.at(i);
+                else
+                    contents[i-32] = vec_archive.at(i);
+
+            // Compare the HMAC's
+			unsigned char hmac_key[32] = {};
+			hmac(contents, padded_key, hmac_key, sizeof contents, 32);
+            if(std::memcmp(file_hmac, hmac_key, 32))
+                die("ERROR: HMAC integrity failure. Password is incorrect or file has been tampered with.");
+            
+            // Loop through all the data and delete the requested files
+            std::vector<BYTE> new_file;
+            int file_name_block = 20;
+            for(int i = 32; i < vec_archive.size();)
+            {
+                // Get the file name (first section of file metadata)
+                std::string file_name;
+                for(int j = 0; j < 20; j++)
+                    if(vec_archive.at(i+j) != 0x00)
+                        file_name.push_back(vec_archive.at(i+j));
+                
+                // Check whether the file needs to be deleted or not
+                bool delete_file = false;
+                for(int j = 0, tmp_arg_index = arg_index; j < argc - tmp_arg_index + 1; j++, tmp_arg_index++)
+                    if(file_name == argv[tmp_arg_index])
+                        delete_file = true;
+                
+                // Get the length of the file contents
+                std::string file_len_string;
+                for(int j = 20; j < 27; j++)
+                    if(vec_archive.at(i+j) != 0x00)
+                        file_len_string.push_back(vec_archive.at(i+j));
+                int file_len = std::stoi(file_len_string);
+
+                // Delete the file or continue on to the next block
+                if(delete_file)
+                    vec_archive.erase(vec_archive.begin() + i, vec_archive.begin() + i + META_DETA_LEN + file_len);
+                else
+                    i += META_DETA_LEN + file_len;   
+            }
+
+            // Get the vector archive as a byte array
+            int archive_size = vec_archive.size();
+            unsigned char arr_archive[archive_size];
+            for(int i = 32; i < archive_size; i++)
+                arr_archive[i] = vec_archive.at(i);
+
+            // Generate the HMAC for the entire file contents
+			unsigned char new_hmac[32] = {};
+			hmac(&arr_archive[32], padded_key, new_hmac, archive_size - KEY_SIZE, KEY_SIZE);
+            std::memcpy(arr_archive, new_hmac, 32);
+
+			// Create the archive and write the encrypted data to it
+			std::ofstream archive(archive_name);
+            archive.write((char *)arr_archive,sizeof(arr_archive));
+            archive.close();
+
 			return cstore_delete();
 		}
 	}
