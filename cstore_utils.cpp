@@ -268,13 +268,10 @@ std::vector<BYTE> read_file(std::string file)
         while(std::getline(in, str))
         {
             if(str.size() > 0)
-            {
                 for(BYTE b : str)
-                {
                     text.push_back(b);
-                }
-                text.push_back(0x0A);
-            }
+            text.push_back(0x0A);
+            continue;
         }
         text.pop_back();
         in.close();

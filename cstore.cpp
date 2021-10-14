@@ -98,10 +98,6 @@ int main(int argc, char *argv[])
                 std::memset(ciphertext, 0, data_size);
                 encrypt_cbc(plaintext, iv, ciphertext, key, 32, data_size);
                 
-                print_hex(key, sizeof key);
-                print_hex(iv, 16);
-                print_hex(ciphertext, sizeof ciphertext);
-
                 // Hold all file data
                 unsigned char metadata[20 + DIGITS + IV_SIZE + sizeof ciphertext];
                 std::memset(metadata, 0, sizeof(metadata));
@@ -217,11 +213,14 @@ int main(int argc, char *argv[])
 
                     std::vector<BYTE> plaintext;
                     decrypt_cbc(ciphertext, plaintext, key, 32, sizeof ciphertext);
-                    print_hex(plaintext);
+
+                    std::ofstream file(file_name);
+                    for (const auto &t : plaintext) 
+                        file << t;
+                    file.close();
                 }
                 i += META_DATA_LEN + file_len;   
             }
-
 			return cstore_extract();
 		}
 
