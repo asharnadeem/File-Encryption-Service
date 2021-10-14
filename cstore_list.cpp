@@ -14,7 +14,7 @@ int cstore_list(std::string archive_name)
     // a "list.txt" file as shown in class
 
     // Open the archive
-    std::vector<BYTE> vec_archive = read_file(archive_name);
+    std::vector<BYTE> vec_archive = read_file(archive_name, true);
     if(vec_archive.empty())
         die("ERROR: Empty archive provided");
     

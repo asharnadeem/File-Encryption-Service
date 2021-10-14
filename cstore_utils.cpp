@@ -258,7 +258,7 @@ void print_hex(const std::vector<BYTE> byte_arr)
     std::cout << std::endl;
 }
 
-std::vector<BYTE> read_file(std::string file)
+std::vector<BYTE> read_file(std::string file, bool kill)
 {
     std::ifstream in(file);
     std::vector<BYTE> text;
@@ -279,7 +279,8 @@ std::vector<BYTE> read_file(std::string file)
     }
     else
     {
-        std::cerr << "ERROR: File " << file << " cannot be opened.\n";
+        if(kill)
+            die("ERROR: Empty file or archive provided.");
         return {};
     }
 }

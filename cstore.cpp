@@ -58,6 +58,10 @@ int main(int argc, char *argv[])
             arg_index = 2;
         }
 
+        // Cap the password to 12 characters
+        if(pt_pass.size() > 12)
+            die("ERROR: Password can be at most 12 characters.");
+
         // Name of the archive
         std::string archive_name = argv[arg_index++];
 
@@ -83,9 +87,7 @@ int main(int argc, char *argv[])
             {
                 // Read in the file
                 std::string filename = argv[i];
-                std::vector<BYTE> plaintext = read_file(filename);
-                if(plaintext.empty())
-                    die("ERROR: Empty file provided");
+                std::vector<BYTE> plaintext = read_file(filename, true);
 
                 // Generate IV
                 unsigned char iv[16] = {};
@@ -131,12 +133,17 @@ int main(int argc, char *argv[])
                 // Increase size of total archive and assign file metadata to archive 
                 archive_size += metadata_size;
                 for(int i = 0; i < metadata_size; i++)
-                {
                     vec_archive.insert(vec_archive.begin() + archive_size - metadata_size + i, metadata[i]);
-                }
             }
 
-            // Get the HMAC
+            std::vector<BYTE> existing_archive = read_file(archive_name, false);
+            if(existing_archive.size() != 0)
+            {
+                vec_archive.insert(vec_archive.begin() + 32, existing_archive.begin() + 32, existing_archive.end());
+                archive_size += existing_archive.size() - 32;
+            }
+
+            // Pad the key
 			unsigned char padded_key[64] = {};
 			for(int i = 0; i < 32; i++)
 				padded_key[i] = key[i];
@@ -161,9 +168,9 @@ int main(int argc, char *argv[])
 
 		if (function == "extract")
 		{
-			std::vector<BYTE> enc_vec = read_file(archive_name);
+			std::vector<BYTE> enc_vec = read_file(archive_name, true);
             if(enc_vec.empty())
-                die("ERROR: Archive empty or does not exist");
+                die("ERROR: Archive empty or does not exist.");
 
             // Get the HMAC of the file
             unsigned char file_hmac[32] = {};
@@ -227,9 +234,7 @@ int main(int argc, char *argv[])
 		if (function == "delete")
 		{
             // Open the archive
-            std::vector<BYTE> vec_archive = read_file(archive_name);
-            if(vec_archive.empty())
-                die("ERROR: Empty archive provided");
+            std::vector<BYTE> vec_archive = read_file(archive_name, true);
 
             // Get the HMAC of the file
             unsigned char file_hmac[32] = {};

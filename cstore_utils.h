@@ -35,7 +35,7 @@ void print_hex(const BYTE* byte_arr, int len);
 
 void print_hex(const std::vector<BYTE> byte_arr);
 
-std::vector<BYTE> read_file(std::string file);
+std::vector<BYTE> read_file(std::string file, bool kill);
 
 std::string pad_string(std::string original, int char_to_pad, int max);
 
