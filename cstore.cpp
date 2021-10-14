@@ -139,6 +139,20 @@ int main(int argc, char *argv[])
             std::vector<BYTE> existing_archive = read_file(archive_name, false);
             if(existing_archive.size() != 0)
             {
+                // Compare the HMAC's
+                unsigned char contents[existing_archive.size() - 32];
+                unsigned char file_hmac[32] = {};
+                for(int i = 0; i < existing_archive.size(); i++)
+                    if(i < 32)
+                        file_hmac[i] = existing_archive.at(i);
+                    else
+                        contents[i-32] = existing_archive.at(i);
+                unsigned char hmac_key[32] = {};
+                hmac(contents, padded_key, hmac_key, sizeof contents, 32);
+                if(std::memcmp(file_hmac, hmac_key, 32))
+                    die("ERROR: HMAC integrity failure. Password is incorrect or file has been tampered with.");
+                
+                // Combine archives
                 vec_archive.insert(vec_archive.begin() + 32, existing_archive.begin() + 32, existing_archive.end());
                 archive_size += existing_archive.size() - 32;
             }

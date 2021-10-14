@@ -186,9 +186,7 @@ std::vector<BYTE> pad_cbc(std::vector<BYTE> data)
 {
     int bytes_to_pad = 16 - data.size() % 16;
     while(data.size() % 16 != 0)
-    {
         data.push_back(bytes_to_pad);
-    }
     return data;
 }
 
