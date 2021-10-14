@@ -5,6 +5,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <cstring>
 
 // Create error.txt, place your error message, and this will exit the program.
 void die(const std::string error) 
